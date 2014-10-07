@@ -61,7 +61,8 @@ var glome_downlink = redis.createClient(redis_port, redis_host, redis_options);
 // configuration that is received upon subscription
 var config = {
   separator: ':',
-  broadcast_label: 'broadcast'
+  broadcast_label: 'broadcast',
+  notification_label: 'notification'
 };
 
 server.listen(port, function () {
@@ -78,9 +79,11 @@ glome_downlink.subscribe(redis_queue_id);
 
 /**
  * Message received via redis is dispatched here.
+ *
  * A message can be:
  *  o a broadcast to all users of the same app (same room) or
  *  o a direct message to a specific user (glome ID)
+ *  o a direct notification to a client service
  */
 glome_downlink.on("message", function (channel, message) {
   if (message == "config") {
@@ -88,6 +91,8 @@ glome_downlink.on("message", function (channel, message) {
   } else {
     if (config.separator) {
       // parse the message and decide what to do
+      var msg = '';
+      var type = 'message';
       var splits = message.split(config.separator);
 
       if (splits[1] == config.broadcast_label) {
@@ -96,8 +101,15 @@ glome_downlink.on("message", function (channel, message) {
       } else {
         if (typeof users[splits[1]] !== 'undefined')
         {
-          io.sockets.to(users[splits[1]].sid).emit("gnb:message", splits[2]);
-          console.log('message to: ' + splits[1] + ' [' + users[splits[1]].sid + '], message: ' + splits[2]);
+          if (splits[2] == config.notification_label) {
+            type = 'notification';
+            msg = splits[3] || ''
+            io.sockets.to(users[splits[1]].sid).emit("gnb:notification", msg);
+          } else {
+            msg = splits[2] || ''
+            io.sockets.to(users[splits[1]].sid).emit("gnb:message", msg);
+          }
+          console.log(type + ' to: ' + splits[1] + ' [' + users[splits[1]].sid + '] :: ' + msg);
         }
       }
     }
