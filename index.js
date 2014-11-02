@@ -61,8 +61,10 @@ var glome_downlink = redis.createClient(redis_port, redis_host, redis_options);
 // configuration that is received upon subscription
 var config = {
   separator: ':',
+  data_label: 'data',
+  message_label: 'message',
   broadcast_label: 'broadcast',
-  notification_label: 'notification'
+  notification_label: 'notification',
 };
 
 server.listen(port, function () {
@@ -81,36 +83,65 @@ glome_downlink.subscribe(redis_queue_id);
  * Message received via redis is dispatched here.
  *
  * A message can be:
- *  o a broadcast to all users of the same app (same room) or
- *  o a direct message to a specific user (glome ID)
- *  o a direct notification to a client service
+ *
+ *  o data to a specific user (glome ID)
+ *  o broadcast to all users of the same app (same room) or
+ *  o direct message to a specific user (glome ID)
+ *  o notification to a specific user (glome ID)
+ *
+ * Message format specification
+ *
+ * Data messages:
+ *
+ *   uid:data:{glomeid}:[invite]:{JSON object}
+ *
+ * Broadcast messages:
+ *
+ *   uid:message:broadcast:content
+ *
+ * Direct text messages
+ *
+ *   uid:message:{glomeid}:content
+ *
+ * Notification messages:
+ *
+ *   uid:notification:{glomeid}:notification:[paired|unpaired|locked|unlocked|brother|unbrother|erased]
+ *
  */
 glome_downlink.on("message", function (channel, message) {
   if (message == "config") {
     // TODO: future
   } else {
+    console.log('channel: ' + channel + ', message: ' + message);
+
     if (config.separator) {
       // parse the message and decide what to do
-      var msg = '';
-      var type = 'message';
       var splits = message.split(config.separator);
+      var uid = splits[0];
+      var type = splits[1];
+      var glomeid = splits[2];
+      var content = splits[3];
+      var payload = splits[4] || '';
 
-      if (splits[1] == config.broadcast_label) {
-        io.sockets.in(splits[0]).emit("gnb:broadcast", splits[2]);
-        console.log('broadcast to: ' + splits[0] + ', message: ' + splits[2]);
-      } else {
-        if (typeof users[splits[1]] !== 'undefined')
-        {
-          if (splits[2] == config.notification_label) {
-            type = 'notification';
-            msg = splits[3] || ''
-            io.sockets.to(users[splits[1]].sid).emit("gnb:notification", msg);
+      switch (type) {
+        case config.data_label:
+          (payload != '') ? content += ':' + payload : 1=1;
+          io.sockets.to(users[glomeid].sid).emit("gnb:data", content);
+          console.log('data to: ' + uid + ':' + glomeid + ', content: ' + content);
+          break;
+        case config.message_label:
+          if (glomeid == config.broadcast_label) {
+            io.sockets.in(uid).emit("gnb:broadcast", content);
+            console.log('broadcast to: ' + uid + ', content: ' + content);
           } else {
-            msg = splits[2] || ''
-            io.sockets.to(users[splits[1]].sid).emit("gnb:message", msg);
+            io.sockets.to(users[glomeid].sid).emit("gnb:message", content);
+            console.log('message to: ' + uid + ':' + glomeid + ', content: ' + content);
           }
-          console.log(type + ' to: ' + splits[1] + ' [' + users[splits[1]].sid + '] :: ' + msg);
-        }
+          break;
+        case config.notification_label:
+          io.sockets.to(users[glomeid].sid).emit("gnb:notification", content);
+          console.log('notification to: ' + uid + ':' + glomeid + ', content: ' + content);
+          break;
       }
     }
   }
