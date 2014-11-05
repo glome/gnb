@@ -41,7 +41,7 @@
 var users = {};
 var numUsers = 0;
 
-var debug = require('debug');
+//var debug = require('debug');
 var path = require('path');
 var express = require('express');
 var app = express();
@@ -86,16 +86,16 @@ glome_downlink.subscribe(redis_queue_id);
  *
  * A message can be:
  *
- *  o data to a specific user (glome ID)
+ *  o data to a specific user
  *  o broadcast to all users of the same app (same room) or
- *  o direct message to a specific user (glome ID)
- *  o notification to a specific user (glome ID)
+ *  o direct message to a specific user
+ *  o notification to a specific user
  *
  * Message format specification
  *
  * Data messages:
  *
- *   uid:data:{glomeid}:[invite]:{JSON object}
+ *   uid:data:{gid}:[invite]:{JSON object}
  *
  * Broadcast messages:
  *
@@ -103,11 +103,11 @@ glome_downlink.subscribe(redis_queue_id);
  *
  * Direct text messages
  *
- *   uid:message:{glomeid}:content
+ *   uid:message:{gid}:content
  *
  * Notification messages:
  *
- *   uid:notification:{glomeid}:notification:[paired|unpaired|locked|unlocked|brother|unbrother|erased]
+ *   uid:notification:{gid}:notification:[paired|unpaired|locked|unlocked|brother|unbrother|erased]
  *
  */
 glome_downlink.on("message", function (channel, message) {
@@ -121,28 +121,42 @@ glome_downlink.on("message", function (channel, message) {
       var splits = message.split(config.separator);
       var uid = splits[0];
       var type = splits[1];
-      var glomeid = splits[2];
+      var gid = splits[2];
       var content = splits[3];
       var payload = splits[4] || '';
 
+      console.log(uid + ':' + type + ':' + gid + ':' + content + ':' + payload);
+      console.log('-----------------------------');
+      console.log(users[gid]);
+      console.log('-----------------------------');
+
       switch (type) {
         case config.data_label:
-          (payload != '') ? content += ':' + payload : 1=1;
-          io.sockets.to(users[glomeid].sid).emit("gnb:data", content);
-          console.log('data to: ' + uid + ':' + glomeid + ', content: ' + content);
+          if (typeof users[gid] != 'undefined')
+          {
+            (payload != '') ? content += ':' + payload : 1=1;
+            io.sockets.to(users[gid].sid).emit("gnb:data", content);
+            console.log('data to: ' + uid + ':' + gid + ', content: ' + content);
+          }
           break;
         case config.message_label:
           if (glomeid == config.broadcast_label) {
             io.sockets.in(uid).emit("gnb:broadcast", content);
             console.log('broadcast to: ' + uid + ', content: ' + content);
           } else {
-            io.sockets.to(users[glomeid].sid).emit("gnb:message", content);
-            console.log('message to: ' + uid + ':' + glomeid + ', content: ' + content);
+            if (typeof users[gid] != 'undefined')
+            {
+              io.sockets.to(users[gid].sid).emit("gnb:message", content);
+              console.log('message to: ' + uid + ':' + gid + ', content: ' + content);
+            }
           }
           break;
         case config.notification_label:
-          io.sockets.to(users[glomeid].sid).emit("gnb:notification", content);
-          console.log('notification to: ' + uid + ':' + glomeid + ', content: ' + content);
+          if (typeof users[gid] != 'undefined')
+          {
+            io.sockets.to(users[gid].sid).emit("gnb:notification", content);
+            console.log('notification to: ' + uid + ':' + gid + ', content: ' + content);
+          }
           break;
       }
     }
@@ -154,45 +168,49 @@ glome_downlink.on("message", function (channel, message) {
  */
 io.on('connection', function (socket) {
   // when the client connects
-  socket.on('gnb:connect', function (uid, glomeid) {
-    console.log('connecting: ' + glomeid + ', sid: ' + socket.id);
-
-    // add the client's Glome ID to the global list
-    users[glomeid] = {
-      glomeid: glomeid,
-      sid: socket.id
-    }
-
+  // uid is the Glome app's UID
+  // gid is the unique identifier of the client (could be Glome ID)
+  socket.on('gnb:connect', function (uid, gid) {
     // the user joins to uid room automatically
     socket.join(uid, function() {
       ++numUsers;
 
-      console.log(glomeid + ' joined room: ' + uid);
+      // add the client's Glome ID to the global list
+      users[gid] = {
+        uid: uid,
+        gid: gid,
+        sid: socket.id
+      }
+
+      socket.username = gid;
+
+      console.log(uid + ': new client: ' + gid + ', sid: ' + users[gid].sid);
       socket.emit('gnb:connected', {});
 
       // tell Glome that a user is connected
-      var data = {
-        uid: uid,
-        action: 'connected',
-        glomeid: glomeid
-      }
+      var data = users[gid];
+      data['action'] = 'connected';
       glome_uplink.publish("glome:app", JSON.stringify(data));
     });
   });
 
   // when the client disconnects
-  socket.on('gnb:disconnect', function () {
-    // remove the Glome ID from global usernames list
-    if (typeof users[socket.glomeid] !== 'undefined') {
+  socket.on('disconnect', function () {
+
+    console.log('disconnected ' + socket.id + ': ' + socket.username);
+
+    // remove the connection from the global list
+    if (typeof users[socket.username] !== 'undefined') {
+      var data = users[socket.username];
+
       --numUsers;
-      delete users[socket.glomeid];
+      delete users[socket.username];
+
+      console.log(data.uid + ': client gone: ' + data.gid + ', sid: ' + data.sid);
+      socket.emit('gnb:connected', {});
 
       // tell Glome that a user is connected
-      var data = {
-        uid: uid,
-        action: 'disconnected',
-        glomeid: glomeid
-      }
+      data['action'] = 'disconnected';
       glome_uplink.publish("glome:app", JSON.stringify(data));
     }
   });
