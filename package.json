@@ -7,6 +7,7 @@
     "url": "git@github.com:glome/gnb.git"
   },
   "dependencies": {
+    "debug": ">=2.1.0",
     "socket.io": ">=1.1.0",
     "redis": ">=0.12.1",
     "express": ">=4.9.3"

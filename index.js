@@ -37,9 +37,11 @@
  * Copyright (c) 2014 Glome Oy
  *
  */
+
 var users = {};
 var numUsers = 0;
 
+var debug = require('debug');
 var path = require('path');
 var express = require('express');
 var app = express();
@@ -151,7 +153,6 @@ glome_downlink.on("message", function (channel, message) {
  * Register callbacks
  */
 io.on('connection', function (socket) {
-
   // when the client connects
   socket.on('gnb:connect', function (uid, glomeid) {
     console.log('connecting: ' + glomeid + ', sid: ' + socket.id);
