@@ -39,6 +39,7 @@
  */
 
 var users = {};
+var sockets = {};
 var numUsers = 0;
 
 //var debug = require('debug');
@@ -125,13 +126,11 @@ glome_downlink.on("message", function (channel, message) {
       var content = splits[3];
       var payload = splits[4] || '';
 
-      console.log(uid + ':' + type + ':' + gid + ':' + content + ':' + payload);
-      console.log('-----------------------------');
-      console.log(users[gid]);
-      console.log('-----------------------------');
+      console.log('uid: ' + uid + ', type: ' + type + ', gid: ' + gid + ', content: ' + content + ', payload: ' + payload);
 
       switch (type) {
         case config.data_label:
+          console.log('send data');
           if (typeof users[gid] != 'undefined')
           {
             (payload != '') ? content += ':' + payload : 1=1;
@@ -140,23 +139,22 @@ glome_downlink.on("message", function (channel, message) {
           }
           break;
         case config.message_label:
-          if (glomeid == config.broadcast_label) {
+          console.log('send message');
+          if (gid == config.broadcast_label) {
             io.sockets.in(uid).emit("gnb:broadcast", content);
             console.log('broadcast to: ' + uid + ', content: ' + content);
           } else {
-            if (typeof users[gid] != 'undefined')
-            {
-              io.sockets.to(users[gid].sid).emit("gnb:message", content);
-              console.log('message to: ' + uid + ':' + gid + ', content: ' + content);
-            }
+            send("gnb:message", uid, gid, content);
           }
           break;
         case config.notification_label:
-          if (typeof users[gid] != 'undefined')
-          {
-            io.sockets.to(users[gid].sid).emit("gnb:notification", content);
-            console.log('notification to: ' + uid + ':' + gid + ', content: ' + content);
-          }
+          console.log('send notification');
+          send("gnb:notification", uid, gid, content);
+          //~ if (typeof users[gid] != 'undefined')
+          //~ {
+            //~ io.sockets.to(users[gid].sid).emit("gnb:notification", content);
+            //~ console.log('notification to: ' + uid + ':' + gid + ', content: ' + content);
+          //~ }
           break;
       }
     }
@@ -169,8 +167,9 @@ glome_downlink.on("message", function (channel, message) {
 io.on('connection', function (socket) {
   // when the client connects
   // uid is the Glome app's UID
-  // gid is the unique identifier of the client (could be Glome ID)
-  socket.on('gnb:connect', function (uid, gid) {
+  // gid is the unique identifier of the client (often an encrypted session ID)
+  // token unique ID of the Glome user
+  socket.on('gnb:connect', function (uid, gid, token) {
     // the user joins to uid room automatically
     socket.join(uid, function() {
       ++numUsers;
@@ -179,10 +178,20 @@ io.on('connection', function (socket) {
       users[gid] = {
         uid: uid,
         gid: gid,
-        sid: socket.id
+        sid: socket.id,
       }
-
       socket.username = gid;
+
+      if (typeof token != 'undefined')
+      {
+        users[gid]['token'] = token;
+
+        if (typeof sockets[token] == 'undefined')
+        {
+          sockets[token] = [];
+        }
+        sockets[token].push(socket.id);
+      }
 
       console.log(uid + ': new client: ' + gid + ', sid: ' + users[gid].sid);
       socket.emit('gnb:connected', {});
@@ -206,6 +215,11 @@ io.on('connection', function (socket) {
       --numUsers;
       delete users[socket.username];
 
+      if (typeof sockets[socket.token] != 'undefined')
+      {
+        delete sockets[socket.token];
+      }
+
       console.log(data.uid + ': client gone: ' + data.gid + ', sid: ' + data.sid);
       socket.emit('gnb:connected', {});
 
@@ -215,3 +229,37 @@ io.on('connection', function (socket) {
     }
   });
 });
+
+/**
+ * Message sending
+ */
+function send(label, uid, gid, content)
+{
+  console.log('common send called');
+  console.log('users ->');
+  console.log(users);
+  console.log('---------------------------------------');
+  console.log('sockets ->');
+  console.log(sockets);
+
+  if (typeof users[gid] != 'undefined')
+  {
+    // send to one socket
+    io.sockets.to(users[gid].sid).emit(label, content);
+    console.log('message to: ' + uid + ':' + gid + ', content: ' + content);
+  }
+  else
+  {
+    if (typeof sockets[gid] != 'undefined')
+    {
+      // send to each and every socket
+      sockets[gid].forEach(function(socket, index, array) {
+        console.log('send to ' + socket);
+      });
+    }
+    else
+    {
+      console.log('no sockets available');
+    }
+  }
+}
