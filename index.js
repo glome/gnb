@@ -38,7 +38,6 @@
  *
  */
 
-var users = {};
 var sockets = {};
 var numUsers = 0;
 
@@ -96,7 +95,7 @@ glome_downlink.subscribe(redis_queue_id);
  *
  * Data messages:
  *
- *   uid:data:{gid}:[invite]:{JSON object}
+ *   uid:data:{token}:[invite]:{JSON object}
  *
  * Broadcast messages:
  *
@@ -104,57 +103,46 @@ glome_downlink.subscribe(redis_queue_id);
  *
  * Direct text messages
  *
- *   uid:message:{gid}:content
+ *   uid:message:{token}:content
  *
  * Notification messages:
  *
- *   uid:notification:{gid}:notification:[paired|unpaired|locked|unlocked|brother|unbrother|erased]
+ *   uid:notification:{token}:notification:[paired|unpaired|locked|unlocked|brother|unbrother|erased]
  *
  */
 glome_downlink.on("message", function (channel, message) {
   if (message == "config") {
     // TODO: future
   } else {
-    console.log('channel: ' + channel + ', message: ' + message);
+    //console.log('channel: ' + channel + ', message: ' + message);
 
     if (config.separator) {
       // parse the message and decide what to do
       var splits = message.split(config.separator);
       var uid = splits[0];
       var type = splits[1];
-      var gid = splits[2];
+      var token = splits[2];
       var content = splits[3];
       var payload = splits[4] || '';
 
-      console.log('uid: ' + uid + ', type: ' + type + ', gid: ' + gid + ', content: ' + content + ', payload: ' + payload);
+      console.log('uid: ' + uid + ', type: ' + type + ', token: ' + token);
+      console.log('content: ' + content + ', payload: ' + payload);
 
       switch (type) {
         case config.data_label:
-          console.log('send data');
-          if (typeof users[gid] != 'undefined')
-          {
-            (payload != '') ? content += ':' + payload : 1=1;
-            io.sockets.to(users[gid].sid).emit("gnb:data", content);
-            console.log('data to: ' + uid + ':' + gid + ', content: ' + content);
-          }
+          (payload != '') ? content += ':' + payload : 1=1;
+          send("gnb:data", uid, token, content);
           break;
         case config.message_label:
-          console.log('send message');
-          if (gid == config.broadcast_label) {
+          if (token == config.broadcast_label) {
             io.sockets.in(uid).emit("gnb:broadcast", content);
             console.log('broadcast to: ' + uid + ', content: ' + content);
           } else {
-            send("gnb:message", uid, gid, content);
+            send("gnb:message", uid, token, content);
           }
           break;
         case config.notification_label:
-          console.log('send notification');
-          send("gnb:notification", uid, gid, content);
-          //~ if (typeof users[gid] != 'undefined')
-          //~ {
-            //~ io.sockets.to(users[gid].sid).emit("gnb:notification", content);
-            //~ console.log('notification to: ' + uid + ':' + gid + ', content: ' + content);
-          //~ }
+          send("gnb:notification", uid, token, content);
           break;
       }
     }
@@ -167,65 +155,65 @@ glome_downlink.on("message", function (channel, message) {
 io.on('connection', function (socket) {
   // when the client connects
   // uid is the Glome app's UID
-  // gid is the unique identifier of the client (often an encrypted session ID)
   // token unique ID of the Glome user
-  socket.on('gnb:connect', function (uid, gid, token) {
+  socket.on('gnb:connect', function (uid, token) {
     // the user joins to uid room automatically
     socket.join(uid, function() {
-      ++numUsers;
-
-      // add the client's Glome ID to the global list
-      users[gid] = {
-        uid: uid,
-        gid: gid,
-        sid: socket.id,
-      }
-      socket.username = gid;
-
       if (typeof token != 'undefined')
       {
-        users[gid]['token'] = token;
+        socket.username = token;
 
         if (typeof sockets[token] == 'undefined')
         {
           sockets[token] = [];
         }
+
         sockets[token].push(socket.id);
+
+        var lastsid = sockets[token][sockets[token].length -1];
+        socket.emit('gnb:connected', {});
+
+        // tell Glome that a user is connected
+        var data = socket.username;
+        data['action'] = 'connected';
+        glome_uplink.publish("glome:app", JSON.stringify(data));
+        data = null;
+
+        console.log('new client of ' + uid + ': token: ' + token + ', sid: ' + lastsid);
+        ++numUsers;
       }
-
-      console.log(uid + ': new client: ' + gid + ', sid: ' + users[gid].sid);
-      socket.emit('gnb:connected', {});
-
-      // tell Glome that a user is connected
-      var data = users[gid];
-      data['action'] = 'connected';
-      glome_uplink.publish("glome:app", JSON.stringify(data));
+      else
+      {
+        console.log('invalid typeof token: ' + typeof token + ': ' + token);
+      }
     });
   });
 
   // when the client disconnects
   socket.on('disconnect', function () {
-
-    console.log('disconnected ' + socket.id + ': ' + socket.username);
-
     // remove the connection from the global list
-    if (typeof users[socket.username] !== 'undefined') {
-      var data = users[socket.username];
-
-      --numUsers;
-      delete users[socket.username];
-
-      if (typeof sockets[socket.token] != 'undefined')
+    if (typeof sockets[socket.username] !== 'undefined') {
+      var index = sockets[socket.username].lastIndexOf(socket.id)
+      if (index > -1)
       {
-        delete sockets[socket.token];
+        console.log('disconnect from sockets of ' + socket.username);
+        console.log(sockets[socket.username]);
+
+        sockets[socket.username].splice(index, 1);
+        socket.emit('gnb:disconnected', {});
+        // tell Glome that a user is disconnected
+        var data = socket.username;
+        data['action'] = 'disconnected';
+        glome_uplink.publish("glome:app", JSON.stringify(data));
+        data = null;
+
+        console.log('client gone: ' + socket.username + ', sid: ' + socket.id);
+        --numUsers;
       }
-
-      console.log(data.uid + ': client gone: ' + data.gid + ', sid: ' + data.sid);
-      socket.emit('gnb:connected', {});
-
-      // tell Glome that a user is connected
-      data['action'] = 'disconnected';
-      glome_uplink.publish("glome:app", JSON.stringify(data));
+      else
+      {
+        console.log('No socket available for ' + socket.username + ' with id: ' + socket.id);
+      }
     }
   });
 });
@@ -233,33 +221,21 @@ io.on('connection', function (socket) {
 /**
  * Message sending
  */
-function send(label, uid, gid, content)
+function send(label, uid, token, content)
 {
-  console.log('common send called');
-  console.log('users ->');
-  console.log(users);
-  console.log('---------------------------------------');
-  console.log('sockets ->');
-  console.log(sockets);
-
-  if (typeof users[gid] != 'undefined')
+  if (typeof sockets[token] != 'undefined' && sockets[token].length > 0)
   {
-    // send to one socket
-    io.sockets.to(users[gid].sid).emit(label, content);
-    console.log('message to: ' + uid + ':' + gid + ', content: ' + content);
+    console.log('common send to all sockets of ' + token);
+    console.log(sockets[token]);
+
+    // send to each and every socket
+    sockets[token].forEach(function(socket, index, array) {
+      io.sockets.to(socket).emit(label, content);
+      console.log('sent to ' + socket);
+    });
   }
   else
   {
-    if (typeof sockets[gid] != 'undefined')
-    {
-      // send to each and every socket
-      sockets[gid].forEach(function(socket, index, array) {
-        console.log('send to ' + socket);
-      });
-    }
-    else
-    {
-      console.log('no sockets available');
-    }
+    console.log('No sockets available for ' + token);
   }
 }
