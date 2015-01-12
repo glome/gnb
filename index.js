@@ -55,7 +55,8 @@ var redis_port = process.env.GLOME_REDIS_PORT || 6379;
 var redis_host = process.env.GLOME_REDIS_HOST || "localhost";
 var redis_options = {};
 
-var redis_queue_id = "glome:gnb";
+var glome_downstream = "glome:gnb:downstream";
+var glome_upstream = "glome:gnb:upstream";
 
 var glome_uplink = redis.createClient(redis_port, redis_host, redis_options);
 var glome_downlink = redis.createClient(redis_port, redis_host, redis_options);
@@ -78,8 +79,8 @@ app.get('/', function(req, res) {
   res.sendFile(path.join(__dirname + '/public/welcome.html'));
 });
 
-// Connect to Redis
-glome_downlink.subscribe(redis_queue_id);
+// Connect to Redis to receive message from Glome API server
+glome_downlink.subscribe(glome_downstream);
 
 /**
  * Message received via redis is dispatched here.
@@ -162,6 +163,7 @@ io.on('connection', function (socket) {
       if (typeof token != 'undefined')
       {
         socket.username = token;
+        socket.appid = uid;
 
         if (typeof sockets[token] == 'undefined')
         {
@@ -170,16 +172,24 @@ io.on('connection', function (socket) {
 
         sockets[token].push(socket.id);
 
-        var lastsid = sockets[token][sockets[token].length -1];
+        var lastsid = sockets[token][sockets[token].length - 1];
         socket.emit('gnb:connected', {});
 
         // tell Glome that a user is connected
-        var data = socket.username;
-        data['action'] = 'connected';
-        glome_uplink.publish("glome:app", JSON.stringify(data));
+        var data = {
+          action: 'connect',
+          params: {
+            socket: socket.id,
+            token: token,
+            uid: uid,
+            sessions: sockets[socket.username].length
+          },
+        }
+        var enc = new Buffer(JSON.stringify(data)).toString('base64');
+        glome_uplink.publish(glome_upstream, enc);
         data = null;
 
-        console.log('new client of ' + uid + ': token: ' + token + ', sid: ' + lastsid);
+        console.log('new client of ' + socket.username + ', sid: ' + lastsid);
         ++numUsers;
       }
       else
@@ -202,9 +212,18 @@ io.on('connection', function (socket) {
         sockets[socket.username].splice(index, 1);
         socket.emit('gnb:disconnected', {});
         // tell Glome that a user is disconnected
-        var data = socket.username;
-        data['action'] = 'disconnected';
-        glome_uplink.publish("glome:app", JSON.stringify(data));
+        // this info should be submitted to 3rd part servers too
+        var data = {
+          action: 'disconnect',
+          params: {
+            socket: socket.id,
+            token: socket.username,
+            uid: socket.appid,
+            sessions: sockets[socket.username].length
+          }
+        }
+        var enc = new Buffer(JSON.stringify(data)).toString('base64');
+        glome_uplink.publish(glome_upstream, enc);
         data = null;
 
         console.log('client gone: ' + socket.username + ', sid: ' + socket.id);
