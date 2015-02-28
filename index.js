@@ -34,7 +34,7 @@
  *
  * Author: ferenc at glome dot me
  * License: MIT
- * Copyright (c) 2014 Glome Oy
+ * Copyright (c) 2014-2015 Glome Oy
  *
  */
 
@@ -124,14 +124,19 @@ glome_downlink.on("message", function (channel, message) {
       var type = splits[1];
       var token = splits[2];
       var content = splits[3];
-      var payload = splits[4] || '';
+      var payload = '';
+
+      if (typeof splits[4] != 'undefined')
+      {
+        payload = splits[4];
+      }
 
       console.log('uid: ' + uid + ', type: ' + type + ', token: ' + token);
       console.log('content: ' + content + ', payload: ' + payload);
 
       switch (type) {
         case config.data_label:
-          (payload != '') ? content += ':' + payload : 1=1;
+          (payload != '') ? content += ':' + payload : content = content;
           send("gnb:data", uid, token, content);
           break;
         case config.message_label:
