@@ -36,13 +36,9 @@ The following envrironment variables can be used to configure the broker:
 
     The port where GNB is listening for incoming requests (default: 8082).
 
- * <i>GLOME_REDIS_HOST</i>
+ * <i>REDIS_URL</i>
 
-    Host name of Glome's Redis server to connect to (default: localhost).
-
- * <i>GLOME_REDIS_PORT</i>
-
-    Port of Glome's Redis server (default: 6379).
+    URL of Glome's Redis server to connect to.
 
 ### Redis channels
 
