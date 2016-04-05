@@ -5,8 +5,7 @@
  * Envrironment variables that can be used:
  *
  * o GNB_PORT: the port where this app is listening (default: 8082)
- * o GLOME_REDIS_HOST: Host name of Glome's Redis server to connect to (default: localhost)
- * o GLOME_REDIS_PORT: Port of Glome's Redis server (default: 6379)
+ * o REDIS_URL: Glome's Redis server to connect to
  *
  * The broker establishes two Redis connections for duplex communication.
  * One channel is the downlink that carries messages from Glome towards the
@@ -51,15 +50,14 @@ var port = process.env.GNB_PORT || 8082;
 
 // Glome Redis connection
 var redis = require("redis");
-var redis_port = process.env.GLOME_REDIS_PORT || 6379;
-var redis_host = process.env.GLOME_REDIS_HOST || "localhost";
+var redis_url = process.env.REDIS_URL;
 var redis_options = {};
 
 var glome_downstream = "glome:gnb:downstream";
 var glome_upstream = "glome:gnb:upstream";
 
-var glome_uplink = redis.createClient(redis_port, redis_host, redis_options);
-var glome_downlink = redis.createClient(redis_port, redis_host, redis_options);
+var glome_uplink = redis.createClient(redis_url, redis_options);
+var glome_downlink = redis.createClient(redis_url, redis_options);
 
 // configuration that is received upon subscription
 var config = {
