@@ -68,6 +68,10 @@ var config = {
   notification_label: 'notification',
 };
 
+io.origins(function(origin, callback) {
+  callback(null, true);
+});
+
 server.listen(port, function () {
   console.log('Server listening at port %d', port);
 });
