@@ -9,6 +9,9 @@
     "type": "git",
     "url": "git@github.com:glome/gnb.git"
   },
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "debug": ">=2.1.0",
     "socket.io": ">=1.1.0",
