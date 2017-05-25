@@ -3,23 +3,26 @@
   "version": "0.0.1",
   "description": " Glome Notification Broker is a simple notification broker for Glome enabled services.",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
     "url": "git@github.com:glome/gnb.git"
   },
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
     "debug": ">=2.1.0",
     "socket.io": ">=1.1.0",
     "redis": ">=0.12.1",
-    "express": ">=4.9.3"
+    "express": ">=4.9.3",
+    "snyk": "^1.30.1"
   },
-  "maintainers": [{
-    "name": "ferenc",
-    "email": "ferenc@glome.me"
-  }]
+  "maintainers": [
+    {
+      "name": "ferenc",
+      "email": "ferenc@glome.me"
+    }
+  ],
+  "snyk": true
 }
